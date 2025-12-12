@@ -1,3 +1,5 @@
+"""Integration tests for the full CLI workflow."""
+
 import json
 import subprocess
 from pathlib import Path
@@ -6,8 +8,16 @@ from pathlib import Path
 AISDLC_CMD = ["aisdlc"]  # Or ["python", "-m", "ai_sdlc.cli"]
 
 
-def run_aisdlc_command(cwd: Path, *args):
-    """Helper to run aisdlc commands in tests."""
+def run_aisdlc_command(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run aisdlc commands in tests.
+
+    Args:
+        cwd: Working directory for the command.
+        *args: Command arguments to pass to aisdlc.
+
+    Returns:
+        subprocess.CompletedProcess: Result of the subprocess run.
+    """
     return subprocess.run(
         AISDLC_CMD + list(args),
         capture_output=True,
@@ -20,8 +30,16 @@ def run_aisdlc_command(cwd: Path, *args):
 # Remove the mock_cursor_agent fixture since we're now tool-agnostic
 
 
-def test_full_lifecycle_flow(temp_project_dir: Path, mocker):
-    """Test the entire aisdlc workflow from init through next to done."""
+def test_full_lifecycle_flow(temp_project_dir: Path, mocker) -> None:
+    """Test the entire aisdlc workflow from init through next to done.
+
+    This integration test verifies:
+    - Initialization creates all necessary files and directories
+    - Creating a new feature works correctly
+    - Advancing through steps generates prompt files
+    - Workflow state updates correctly
+    - Archiving completed features works
+    """
 
     # Patch ROOT to point to our temp directory for all utils functions
     mocker.patch("ai_sdlc.utils.ROOT", temp_project_dir)

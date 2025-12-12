@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from importlib import import_module
 
-from .utils import load_config, read_lock  # Added for status display
+from .utils import CONFIG_FILE, load_config, read_lock
 
 _COMMANDS: dict[str, str] = {
     "init": "ai_sdlc.commands.init:run_init",
@@ -19,14 +19,37 @@ _COMMANDS: dict[str, str] = {
 
 
 def _resolve(dotted: str) -> Callable[..., None]:
-    """Import `"module:function"` and return the function object."""
-    module_name, func_name = dotted.split(":")
-    module = import_module(module_name)
+    """Import a function from a module using dotted path notation.
+
+    Args:
+        dotted: String in format "module.path:function_name".
+
+    Returns:
+        Callable[..., None]: The imported function.
+
+    Raises:
+        ValueError: If the dotted path format is invalid.
+        ImportError: If the module cannot be imported.
+        AttributeError: If the function is not found in the module.
+    """
+    if ":" not in dotted:
+        raise ValueError(f"Invalid dotted path format: {dotted}. Expected 'module:function'")
+    module_name, func_name = dotted.split(":", 1)
+    try:
+        module = import_module(module_name)
+    except ImportError as e:
+        raise ImportError(f"Could not import module '{module_name}': {e}") from e
+    if not hasattr(module, func_name):
+        raise AttributeError(f"Module '{module_name}' has no attribute '{func_name}'")
     return getattr(module, func_name)  # type: ignore[no-any-return]
 
 
 def _display_compact_status() -> None:
-    """Displays a compact version of the current workstream status."""
+    """Display a compact version of the current workstream status.
+
+    Shows the active feature slug, current step, and progress bar.
+    Silently handles errors to avoid disrupting the main command output.
+    """
     lock = read_lock()
     if not lock or "slug" not in lock:
         return  # No active workstream or invalid lock
@@ -51,9 +74,9 @@ def _display_compact_status() -> None:
             print(
                 f"\n---\n📌 Current: {slug} @ {current_step_name} (Step not in config)\n---"
             )
-    except FileNotFoundError:  # .aisdlc missing
+    except (FileNotFoundError, KeyError):  # .aisdlc missing or invalid config
         print(
-            "\n---\n📌 AI-SDLC config (.aisdlc) not found. Cannot display status.\n---"
+            f"\n---\n📌 AI-SDLC config ({CONFIG_FILE}) not found or invalid. Cannot display status.\n---"
         )
     except Exception:  # Catch other potential errors during status display
         print(
@@ -62,15 +85,23 @@ def _display_compact_status() -> None:
 
 
 def main() -> None:  # noqa: D401
-    """Run the requested sub-command."""
+    """Run the requested sub-command.
+
+    Parses command-line arguments and routes to the appropriate command handler.
+    Displays compact status after most commands (except status and init).
+    """
     cmd, *args = sys.argv[1:] or ["--help"]
     if cmd not in _COMMANDS:
         valid = "|".join(_COMMANDS.keys())
         print(f"Usage: aisdlc [{valid}] [--help]")
         sys.exit(1)
 
-    handler = _resolve(_COMMANDS[cmd])
-    handler(args) if args else handler()
+    try:
+        handler = _resolve(_COMMANDS[cmd])
+        handler(args) if args else handler()
+    except (ValueError, ImportError, AttributeError) as e:
+        print(f"❌ Error: Failed to load command '{cmd}': {e}")
+        sys.exit(1)
 
     # Display status after most commands, unless it's status itself or init (before lock exists)
     if cmd not in ["status", "init"]:

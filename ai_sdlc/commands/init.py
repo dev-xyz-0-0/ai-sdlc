@@ -2,8 +2,11 @@
 """`aisdlc init` – scaffold baseline folders, config, prompts & lock."""
 
 import importlib.resources as pkg_resources
+import json
 import sys
 from pathlib import Path
+
+from ai_sdlc.utils import CONFIG_FILE, DEFAULT_ACTIVE_DIR, DEFAULT_DONE_DIR, DEFAULT_PROMPT_DIR, LOCK_FILE
 
 ASCII_ART = """
    █████╗ ██╗███████╗██╗  ██╗ ██████╗██╗
@@ -86,8 +89,8 @@ def run_init() -> None:
 
     try:
         scaffold_dir = pkg_resources.files("ai_sdlc").joinpath("scaffold_template")
-        default_config_content = scaffold_dir.joinpath(".aisdlc").read_text()
-        prompt_files_source_dir = scaffold_dir.joinpath("prompts")
+        default_config_content = scaffold_dir.joinpath(CONFIG_FILE).read_text(encoding="utf-8")
+        prompt_files_source_dir = scaffold_dir.joinpath(DEFAULT_PROMPT_DIR)
     except Exception as e:
         print(
             f"❌ Critical Error: Could not load scaffold templates from the ai-sdlc package: {e}"
@@ -102,19 +105,19 @@ def run_init() -> None:
         sys.exit(1)
 
     # Create directories
-    prompts_target_dir = init_root / "prompts"
+    prompts_target_dir = init_root / DEFAULT_PROMPT_DIR
     prompts_target_dir.mkdir(exist_ok=True)
-    (init_root / "doing").mkdir(exist_ok=True)
-    (init_root / "done").mkdir(exist_ok=True)
+    (init_root / DEFAULT_ACTIVE_DIR).mkdir(exist_ok=True)
+    (init_root / DEFAULT_DONE_DIR).mkdir(exist_ok=True)
     print(
-        f"📂 Created/ensured directories: {prompts_target_dir.relative_to(Path.cwd())}, doing/, done/"
+        f"📂 Created/ensured directories: {prompts_target_dir.relative_to(Path.cwd())}, {DEFAULT_ACTIVE_DIR}/, {DEFAULT_DONE_DIR}/"
     )
 
     # Write .aisdlc config file
-    config_target_path = init_root / ".aisdlc"
+    config_target_path = init_root / CONFIG_FILE
     if not config_target_path.exists():
         try:
-            config_target_path.write_text(default_config_content)
+            config_target_path.write_text(default_config_content, encoding="utf-8")
             print(
                 f"📄 Created default config: {config_target_path.relative_to(Path.cwd())}"
             )
@@ -133,8 +136,8 @@ def run_init() -> None:
         target_file = prompts_target_dir / fname
         if not target_file.exists():
             try:
-                content = prompt_files_source_dir.joinpath(fname).read_text()
-                target_file.write_text(content)
+                content = prompt_files_source_dir.joinpath(fname).read_text(encoding="utf-8")
+                target_file.write_text(content, encoding="utf-8")
                 print(f"  - Created prompt: {target_file.relative_to(Path.cwd())}")
             except FileNotFoundError:
                 print(
@@ -144,10 +147,7 @@ def run_init() -> None:
             except OSError as e:
                 print(f"  ❌ Error creating prompt '{fname}': {e}")
                 all_prompts_exist = False
-        else:
-            # To avoid too much noise, only print if it was skipped.
-            # print(f"  - Prompt {target_file.relative_to(Path.cwd())} already exists, skipping.")
-            pass
+        # Existing files are silently skipped to avoid noise
     if all_prompts_exist and all(
         (prompts_target_dir / fname).exists() for fname in PROMPT_FILE_NAMES
     ):
@@ -161,10 +161,8 @@ def run_init() -> None:
 
     # Create lock file
     try:
-        import json
-
-        lock_file_path = init_root / ".aisdlc.lock"
-        lock_file_path.write_text(json.dumps({}))
+        lock_file_path = init_root / LOCK_FILE
+        lock_file_path.write_text(json.dumps({}), encoding="utf-8")
         print(f"🔒 Created empty lock file: {lock_file_path.relative_to(Path.cwd())}")
     except OSError as e:
         print(f"❌ Error writing lock file: {e}")

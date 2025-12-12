@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import sys
 
-from ai_sdlc.utils import ROOT, load_config, read_lock, write_lock
+from ai_sdlc.utils import (
+    DEFAULT_ACTIVE_DIR,
+    DEFAULT_PROMPT_DIR,
+    ROOT,
+    load_config,
+    read_lock,
+    write_lock,
+)
 
+# Placeholder string used in prompt templates to inject previous step content
 PLACEHOLDER = "<prev_step></prev_step>"
 
 
 def run_next() -> None:
+    """Generate the next step's prompt file and advance workflow state.
+
+    Reads the previous step's output, merges it with the next step's prompt template,
+    and creates a prompt file for the user to use with their AI tool. If the next
+    step file already exists, automatically advances the workflow state.
+
+    Raises:
+        SystemExit: If required files are missing or configuration is invalid.
+    """
     conf = load_config()
     steps = conf["steps"]
     lock = read_lock()
@@ -18,8 +35,21 @@ def run_next() -> None:
         print("❌  No active workstream. Run `aisdlc new` first.")
         return
 
-    slug = lock["slug"]
-    idx = steps.index(lock["current"])
+    try:
+        slug = lock["slug"]
+        current_step = lock["current"]
+    except KeyError as e:
+        print(f"❌  Error: Lock file missing required key: {e}")
+        print("   Please run `aisdlc new` to create a new workstream.")
+        return
+
+    try:
+        idx = steps.index(current_step)
+    except ValueError:
+        print(f"❌  Error: Current step '{current_step}' not found in configuration steps.")
+        print(f"   Available steps: {', '.join(steps)}")
+        return
+
     if idx + 1 >= len(steps):
         print("🎉  All steps complete. Run `aisdlc done` to archive.")
         return
@@ -27,9 +57,12 @@ def run_next() -> None:
     prev_step = steps[idx]
     next_step = steps[idx + 1]
 
-    workdir = ROOT / conf["active_dir"] / slug
+    active_dir = conf.get("active_dir", DEFAULT_ACTIVE_DIR)
+    prompt_dir = conf.get("prompt_dir", DEFAULT_PROMPT_DIR)
+
+    workdir = ROOT / active_dir / slug
     prev_file = workdir / f"{prev_step}-{slug}.md"
-    prompt_file = ROOT / conf["prompt_dir"] / f"{next_step}.instructions.md"
+    prompt_file = ROOT / prompt_dir / f"{next_step}.instructions.md"
     next_file = workdir / f"{next_step}-{slug}.md"
 
     if not prev_file.exists():
@@ -41,26 +74,34 @@ def run_next() -> None:
         print(
             f"   If you need to restart the '{prev_step}', you might need to adjust '.aisdlc.lock' or re-run the command that generates '{prev_step}'."
         )
-        sys.exit(1)  # Make it a harder exit
+        sys.exit(1)
     if not prompt_file.exists():
         print(f"❌ Critical Error: Prompt template file '{prompt_file}' is missing.")
         print(f"   This file is essential for generating the '{next_step}' step.")
-        print(f"   Please ensure it exists in your '{conf['prompt_dir']}/' directory.")
+        print(f"   Please ensure it exists in your '{prompt_dir}/' directory.")
         print(
             "   You may need to restore it from version control or your initial 'aisdlc init' setup."
         )
-        sys.exit(1)  # Make it a harder exit
+        sys.exit(1)
 
-    print(f"ℹ️  Reading previous step from: {prev_file}")
-    prev_step_content = prev_file.read_text()
-    print(f"ℹ️  Reading prompt template from: {prompt_file}")
-    prompt_template_content = prompt_file.read_text()
+    try:
+        print(f"ℹ️  Reading previous step from: {prev_file}")
+        prev_step_content = prev_file.read_text(encoding="utf-8")
+        print(f"ℹ️  Reading prompt template from: {prompt_file}")
+        prompt_template_content = prompt_file.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"❌ Error: Could not read required file: {e}")
+        sys.exit(1)
 
     merged_prompt = prompt_template_content.replace(PLACEHOLDER, prev_step_content)
 
     # Create a prompt file for the user to use with their preferred AI tool
     prompt_output_file = workdir / f"_prompt-{next_step}.md"
-    prompt_output_file.write_text(merged_prompt)
+    try:
+        prompt_output_file.write_text(merged_prompt, encoding="utf-8")
+    except OSError as e:
+        print(f"❌ Error: Could not write prompt file '{prompt_output_file}': {e}")
+        sys.exit(1)
 
     print(f"📝  Generated AI prompt file: {prompt_output_file}")
     print(
